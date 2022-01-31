@@ -1,7 +1,7 @@
 import os
 
 
-def file_names_in(path):
+def list_files(path):
     return list(zip(*os.walk(path)))[2][0]
 
 

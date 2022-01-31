@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Iterator, Iterable
+from typing import Iterator, Iterable, List
 
 import pandas as pd
 import urllib.request as request
@@ -9,7 +9,7 @@ from tqdm import tqdm as progressbar
 from src.settings import DATA_PATH
 
 
-def existing_file_ids() -> Iterable[str]:
+def existing_file_ids() -> List[str]:
     file_names = list(zip(*os.walk(DATA_PATH.joinpath('documents'))))[2][0]
     id_pattern = re.compile(r'^\((\d+)\)')
     return [re.findall(id_pattern, file_name)[0] for file_name in file_names]
