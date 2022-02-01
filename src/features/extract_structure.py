@@ -1,29 +1,95 @@
 import logging
 import os
+import re
+import string
+from functools import partial, reduce
+from pathlib import Path
+
+from packaging import markers
+
 os.environ['LD_LIBRARY_PATH'] = 'C:\\Program Files\\gs\\gs9.55.0\\bin\\gsdll64.dll'
 logging.disable()
 
 from itertools import filterfalse
 from dataclasses import dataclass
 from os import PathLike
-from typing import List, Iterator, Set
+from typing import List, Iterator, Set, Tuple, Dict
 
 import camelot
 import pandas as pd
+from pikepdf import Pdf
 from tqdm import tqdm as progressbar
 
 from src.features.utils import convert_doc_to_docx, process, convert_pdf_to_docx, index_of_marker, convert_docx_to_pdf
-from src.settings import DATA_PATH, MARKERS
+from src.settings import DATA_PATH
 from src.utils import list_files
+
+
+MARKERS = (
+    'Планируемые результаты обучения',
+    'Наименование раздела дисциплины',
+    'Наименование раздела дисциплины (модуля)',
+    'Содержание',
+
+    # ГИА
+    'Наименование оценочного средства',
+)
+
+
+def clean_keyword(word):
+    word = re.sub(r'\n', '', word)
+    word = re.sub(r'\w+ (\d\. ?)+', '', word)
+    word = re.sub(r'\(.*\)', '', word)
+    word = re.sub(r' ?[-–●•] ', '', word)
+    # word = re.sub('Умения:', ' ', word)
+    # word = re.sub('Навыки:', ' ', word)
+    # word = re.sub('Знания:', ' ', word)
+    # word = re.sub('Итого:', ' ', word)
+    word = re.sub(r'\w+:', '', word)
+    word = re.sub(' +', ' ', word)
+    word = word.strip()
+
+    return word
+
+
+def indexes_of(string: str, substring: str):
+    indexes = []
+    try:
+        while True:
+            indexes.append(string.index(substring, (indexes[-1] if indexes else -1) + 1))
+    except ValueError:
+        return indexes
+
+
+def split(word: str):
+    seqs = set()
+    buffer = []
+
+    def release_buffer():
+        if buffer:
+            seqs.add(''.join(buffer))
+            buffer.clear()
+
+    for c in word:
+        if c in ('.', ',', ';'):
+            release_buffer()
+        # elif c == c.upper() and c != ' ' and (buffer and buffer[-1] != buffer[-1].upper()):
+        #     release_buffer()
+        #     buffer.append(c)
+        elif buffer or c != ' ':
+            buffer.append(c)
+    release_buffer()
+
+    return seqs
 
 
 @dataclass
 class Extractor:
-    markers: List[str]
+    markers: Tuple[str, ...]
 
-    def extract(self, filepath) -> Set[str]:
+    def extract(self, filepath) -> Dict[str, Set[str]]:
         filepath = str(filepath)
-        keywords = set()
+        keywords = {}
 
         if filepath.lower().endswith('.doc'):
             filepath = convert_doc_to_docx(filepath)
@@ -47,7 +113,16 @@ class Extractor:
             # return keywords.difference(self.markers).difference({''})
 
         if filepath.lower().endswith('.pdf'):
-            tables = camelot.read_pdf(filepath, pages='all')
+            try:
+                tables = camelot.read_pdf(filepath, pages='all')
+
+            except Exception:
+                pdf = Pdf.open(filepath, allow_overwriting_input=True)
+                pdf.remove_unreferenced_resources()
+                pdf.save()
+                pdf.close()
+
+                tables = camelot.read_pdf(filepath, pages='all')
 
             for table in tables:
                 df = table.df
@@ -56,7 +131,7 @@ class Extractor:
 
                 for marker in self.markers:
                     if (idx := index_of_marker(df.columns, marker)) != -1:
-                        keywords.update(df.iloc[:, idx])
+                        keywords[marker] = set(df.iloc[:, idx])
 
             return keywords
 
@@ -78,31 +153,53 @@ def all_to_docx():
 
 if __name__ == '__main__':
     extractor = Extractor(MARKERS)
+    # extractor.extract()
+    # f = DATA_PATH.joinpath('documents', '(236863) Создание и развитие студенческого клуба.pdf') # good
 
-    keywords = {}
+    # f = DATA_PATH.joinpath('documents', '(243940) 27_Алгоритмы_и_структуры_данных_ОГНП_КТ.pdf')
+    # f = DATA_PATH.joinpath('documents', '(241976) Б1_28_1.2_Мультимедиа_технологии_ОГНП_КТ.pdf')
+
+    df = pd.DataFrame({i: [] for i in ('FILE_NAME',) + MARKERS})
 
     for file in progressbar(list(files())[:100], ncols=100):
         try:
-            keywords[file.name] = ','.join(list(filterfalse(''.__eq__, map(process, extractor.extract(file)))))
+            file_keywords = extractor.extract(file)
+
+            for marker, keywords in file_keywords.items():
+                keywords = set(map(clean_keyword, list(keywords)))
+                keywords = reduce(set.__or__, map(split, keywords))
+                file_keywords[marker] = ','.join(keywords)
+
+            df = pd.concat((df, pd.DataFrame({'FILE_NAME': [file.name], **{k: [v] for k, v in file_keywords.items()}})))
+
+            # keywords_[file.name] = ','.join(file_keywords)
 
         except Exception as e:
             print('Error:', file, e)
             continue
 
+    # print(keywords)
+
+    # print(indexes_of('hello. ind.s me. I', '.'))
+
+
+
+    #
     p = DATA_PATH.joinpath('results')
-    p.mkdir(exist_ok=True)
+    df.to_csv(str(p.joinpath('tables.small.v3.3.csv')))
+    # p.mkdir(exist_ok=True)
     # with open(str(p.joinpath('tables.small.v1.csv')), 'w', encoding='utf-8') as f:
     #     for k, v in keywords.items():
     #         f.write(k + '|' + ','.join(v) + '\n')
 
     # print(keywords)
 
-    pd.DataFrame({
-        'FILE_NAME': keywords.keys(),
-        'KEYWORDS': keywords.values()
-    }).to_csv(
-        str(p.joinpath('tables.small.v2.2.csv'))
-    )
+    # pd.DataFrame({
+    #     'FILE_NAME': keywords_.keys(),
+    #     'KEYWORDS': keywords_.values()
+    # }).to_csv(
+    #     str(p.joinpath('tables.small.v3.2.csv'))
+    # )
 
     # tables = camelot.read_pdf('D:\\projects\\rpd-keyword-extraction\\data\\documents\\(206832) 58 Разработка распределенных приложении.pdf')
 
