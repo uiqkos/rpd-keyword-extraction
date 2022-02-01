@@ -1,11 +1,9 @@
 import os
 import re
-from operator import indexOf, attrgetter
-from typing import Union, Iterable, List
+from operator import indexOf
 
-import numpy as np
 import pdf2docx
-from docx.table import Table
+from docx2pdf import convert
 from win32com import client as wc
 
 
@@ -28,43 +26,25 @@ def convert_pdf_to_docx(filepath, remove=False):
     return new_filepath
 
 
-def fix_column(column: Iterable[Union[str, type(np.nan)]]) -> List[str]:
-    buffer = []
-    items = []
-
-    def release_buffer():
-        if buffer:
-            items.append(' '.join(map(str, buffer)))
-            buffer.clear()
-
-    for item in column:
-        if item is np.nan:
-            release_buffer()
-
-        else:
-            buffer.append(item)
-
-    release_buffer()
-    return items
+def convert_docx_to_pdf(filepath, remove=False):
+    filepath = str(filepath)
+    convert(filepath, (new_filepath := filepath.replace('.docx', '.pdf')))
+    return new_filepath
 
 
 def process(s):
     return ' '.join(re.findall(r'\w+', str(s).lower()))
 
 
-def contains_marker(container, marker) -> Union[bool, type(None)]:
+def index_of_marker(container, marker) -> int:
     marker = process(marker)
 
-    def match(s): return (s := process(s)) in marker or marker in s
+    def match(s): return process(s) == marker
 
-    # try:
-    #     idx = indexOf(list(map(match, container)), True)
-    #
-    # except ValueError:
-    #     idx = None
+    try:
+        idx = indexOf(list(map(match, container)), True)
 
-    return any(map(match, container))
+    except ValueError:
+        idx = -1
 
-
-def table_to_columns(table: Table) -> List[List[str]]:
-    return [list(map(attrgetter('text'), column.cells)) for column in table.columns]
+    return idx

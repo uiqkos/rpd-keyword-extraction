@@ -1,26 +1,18 @@
 import logging
 import os
-
-import camelot
-import pdf2docx
-
 os.environ['LD_LIBRARY_PATH'] = 'C:\\Program Files\\gs\\gs9.55.0\\bin\\gsdll64.dll'
 logging.disable()
 
+from itertools import filterfalse
 from dataclasses import dataclass
 from os import PathLike
-from pprint import pprint
 from typing import List, Iterator, Set
 
+import camelot
 import pandas as pd
-# import camelot
-import tabula
 from tqdm import tqdm as progressbar
-from docx import Document as read_docx
-from docx.document import Document
 
-from src.features.utils import convert_doc_to_docx, contains_marker, process, fix_column, table_to_columns, \
-    convert_pdf_to_docx
+from src.features.utils import convert_doc_to_docx, process, convert_pdf_to_docx, index_of_marker, convert_docx_to_pdf
 from src.settings import DATA_PATH, MARKERS
 from src.utils import list_files
 
@@ -33,45 +25,40 @@ class Extractor:
         filepath = str(filepath)
         keywords = set()
 
-        if filepath.lower().endswith('.pdf'):
-            # tables = camelot.read_pdf(filepath, pages='all')
-            # tables = tabula.read_pdf(filepath, pages='all')
-            #
-            # for table in tables:
-            #     # df: pd.DataFrame = table.df
-            #     df = table
-            #
-            #     for marker in self.markers:
-            #         # rows
-            #         # if idx := contains_marker(df.axes[0], marker):
-            #         #     keywords.update(df.iloc[idx, :])
-            #
-            #         for column_name in df:
-            #             column = fix_column(df[column_name])
-            #             if contains_marker(column, marker) or contains_marker([column], marker):
-            #                 keywords.update(column)
-            #
-            # return keywords.difference(self.markers)
-            filepath = convert_pdf_to_docx(filepath)
-
         if filepath.lower().endswith('.doc'):
             filepath = convert_doc_to_docx(filepath)
 
         if filepath.lower().endswith('.docx'):
-            doc: Document = read_docx(filepath)
-            tables = doc.tables
+            filepath = convert_docx_to_pdf(filepath)
+            # return keywords
+            # doc: Document = read_docx(filepath)
+            # tables = doc.tables
+            #
+            # for table in tables:
+            #     for marker in self.markers:
+            #         # if idx := contains_marker(table.rows, marker):
+            #         #     keywords.update(table.row_cells(idx))
+            #
+            #         columns = table_to_columns(table)
+            #         for column in columns:
+            #             if contains_marker(column, marker):
+            #                 keywords.update(column)
+            #
+            # return keywords.difference(self.markers).difference({''})
+
+        if filepath.lower().endswith('.pdf'):
+            tables = camelot.read_pdf(filepath, pages='all')
 
             for table in tables:
+                df = table.df
+                df.columns = df.iloc[0]
+                df.drop(0, axis=0, inplace=True)
+
                 for marker in self.markers:
-                    # if idx := contains_marker(table.rows, marker):
-                    #     keywords.update(table.row_cells(idx))
+                    if (idx := index_of_marker(df.columns, marker)) != -1:
+                        keywords.update(df.iloc[:, idx])
 
-                    columns = table_to_columns(table)
-                    for column in columns:
-                        if contains_marker(column, marker):
-                            keywords.update(column)
-
-            return keywords.difference(self.markers)
+            return keywords
 
         raise Exception('Unable to parse file: ' + filepath)
 
@@ -90,31 +77,36 @@ def all_to_docx():
 
 
 if __name__ == '__main__':
-    # all_to_docx()
     extractor = Extractor(MARKERS)
 
     keywords = {}
 
-    for file in progressbar(list(files())[:1000], ncols=100):
+    for file in progressbar(list(files())[:100], ncols=100):
         try:
-            if not str(file).endswith('.docx'):
-                continue
-            keywords[file.name] = list(map(process, extractor.extract(file)))
+            keywords[file.name] = ','.join(list(filterfalse(''.__eq__, map(process, extractor.extract(file)))))
 
-        except:
+        except Exception as e:
+            print('Error:', file, e)
             continue
 
     p = DATA_PATH.joinpath('results')
     p.mkdir(exist_ok=True)
-    with open(str(p.joinpath('tables.small.v1.csv')), 'w', encoding='utf-8') as f:
-        for k, v in keywords.items():
-            f.write(','.join([k, *v]) + '\n')
+    # with open(str(p.joinpath('tables.small.v1.csv')), 'w', encoding='utf-8') as f:
+    #     for k, v in keywords.items():
+    #         f.write(k + '|' + ','.join(v) + '\n')
 
-    # pd.DataFrame(keywords).to_csv()
+    # print(keywords)
+
+    pd.DataFrame({
+        'FILE_NAME': keywords.keys(),
+        'KEYWORDS': keywords.values()
+    }).to_csv(
+        str(p.joinpath('tables.small.v2.2.csv'))
+    )
 
     # tables = camelot.read_pdf('D:\\projects\\rpd-keyword-extraction\\data\\documents\\(206832) 58 Разработка распределенных приложении.pdf')
 
-    # print(list(map(process, extractor.extract('D:\\projects\\rpd-keyword-extraction\\data\\documents\\(206832) 58 Разработка распределенных приложении.docx'))))
+    # print(list(map(process, extractor.extract('D:\\projects\\rpd-keyword-extraction\\data\\documents\\(223806) 450304 Б1.54 Рекомендательные системы.pdf'))))
 
     # print(fix_column(tables[1].iloc[:, -1]))
 

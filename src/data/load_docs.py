@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from typing import Iterator, Iterable, List
 
 import pandas as pd
@@ -28,6 +29,7 @@ def load_docs():
 
         file_name = re.sub(r'[^\w\-_\. ]', '', file_name)
         _, msg = request.urlretrieve(url, docs_data_path.joinpath(f"({file_id}) {file_name}"))
+        time.sleep(1)
 
 
 if __name__ == '__main__':
