@@ -1,26 +1,21 @@
 import logging
 import os
 import re
-import string
-from functools import partial, reduce
-from pathlib import Path
-
-from packaging import markers
+from functools import reduce
 
 os.environ['LD_LIBRARY_PATH'] = 'C:\\Program Files\\gs\\gs9.55.0\\bin\\gsdll64.dll'
 logging.disable()
 
-from itertools import filterfalse
 from dataclasses import dataclass
 from os import PathLike
-from typing import List, Iterator, Set, Tuple, Dict
+from typing import Iterator, Set, Tuple, Dict
 
 import camelot
 import pandas as pd
 from pikepdf import Pdf
 from tqdm import tqdm as progressbar
 
-from src.features.utils import convert_doc_to_docx, process, convert_pdf_to_docx, index_of_marker, convert_docx_to_pdf
+from src.utils import convert_doc_to_docx, convert_pdf_to_docx, index_of_marker, convert_docx_to_pdf
 from src.settings import DATA_PATH
 from src.utils import list_files
 
@@ -41,24 +36,11 @@ def clean_keyword(word):
     word = re.sub(r'\w+ (\d\. ?)+', '', word)
     word = re.sub(r'\(.*\)', '', word)
     word = re.sub(r' ?[-–●•] ', '', word)
-    # word = re.sub('Умения:', ' ', word)
-    # word = re.sub('Навыки:', ' ', word)
-    # word = re.sub('Знания:', ' ', word)
-    # word = re.sub('Итого:', ' ', word)
     word = re.sub(r'\w+:', '', word)
     word = re.sub(' +', ' ', word)
     word = word.strip()
 
     return word
-
-
-def indexes_of(string: str, substring: str):
-    indexes = []
-    try:
-        while True:
-            indexes.append(string.index(substring, (indexes[-1] if indexes else -1) + 1))
-    except ValueError:
-        return indexes
 
 
 def split(word: str):
@@ -73,11 +55,9 @@ def split(word: str):
     for c in word:
         if c in ('.', ',', ';'):
             release_buffer()
-        # elif c == c.upper() and c != ' ' and (buffer and buffer[-1] != buffer[-1].upper()):
-        #     release_buffer()
-        #     buffer.append(c)
         elif buffer or c != ' ':
             buffer.append(c)
+
     release_buffer()
 
     return seqs
@@ -161,7 +141,7 @@ if __name__ == '__main__':
 
     df = pd.DataFrame({i: [] for i in ('FILE_NAME',) + MARKERS})
 
-    for file in progressbar(list(files())[:100], ncols=100):
+    for file in progressbar(list(files()), ncols=100):
         try:
             file_keywords = extractor.extract(file)
 

@@ -1,13 +1,12 @@
 import os
-from functools import partial
 from operator import attrgetter
 
 from docx import Document as document
 from docx.document import Document
 from tqdm import tqdm as progressbar
 
-from src.features.text_preprocessing import *
-from src.features.utils import convert_doc_to_docx
+from src.text_preprocessing import *
+from src.utils import convert_doc_to_docx
 from src.settings import DATA_PATH
 from src.utils import list_files
 

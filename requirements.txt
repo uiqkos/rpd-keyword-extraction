@@ -1,0 +1,10 @@
+pdf2docx~=0.5.2
+docx2pdf~=0.1.8
+pandas~=1.4.0
+tqdm~=4.62.3
+openpyxl~=3.0.9
+pikepdf~=4.4.1
+tika~=1.24
+nltk~=3.6.7
+pymorphy2~=0.9.1
+langid~=1.1.6

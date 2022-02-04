@@ -10,11 +10,6 @@ from tqdm import tqdm as progressbar
 from src.settings import DATA_PATH
 
 
-def existing_file_ids() -> Set[str]:
-    file_names = list(zip(*os.walk(DATA_PATH.joinpath('documents'))))[2][0]
-    id_pattern = re.compile(r'^\((\d+)\)')
-    return {int(re.findall(id_pattern, file_name)[0]) for file_name in file_names}
-
 
 def load_docs():
     raw_data_path = DATA_PATH.joinpath('raw', 'data.csv')
