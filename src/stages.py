@@ -1,28 +1,20 @@
 import json
-from itertools import filterfalse
-from multiprocessing.pool import ThreadPool
-
-import numpy as np
 import os
 import re
 import time
 from abc import ABC, abstractmethod
 from functools import partial, reduce
-from operator import attrgetter
+from itertools import filterfalse, zip_longest
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from typing import Iterator, List, Tuple, Union
 from urllib import request
 
 import camelot
 import pandas as pd
-from tqdm import tqdm
-from openpyxl.pivot.fields import TupleList
 from pikepdf import Pdf
 
-from src.utils import convert_doc_to_docx, convert_docx_to_pdf, index_of_marker
-
-
-progressbar = partial(tqdm, ncols=100)
+from src.utils import convert_doc_to_docx, convert_docx_to_pdf, index_of_marker, progressbar
 
 
 class Stage(ABC):
@@ -191,11 +183,12 @@ class ExtractTables(Stage):
 
 
 class ExtractKeywords(Stage):
-
-    def __init__(self, markers, *args, **kwargs):
+    def __init__(self, markers, flatten_results=False, seps=('.', ',', ';'), *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.markers = markers
+        self.flatten_results = flatten_results
+        self.seps = seps
 
     @staticmethod
     def _clean(word):
@@ -213,8 +206,7 @@ class ExtractKeywords(Stage):
 
         return word
 
-    @staticmethod
-    def _split(word):
+    def _split(self, word):
         seqs = set()
         buffer = []
 
@@ -224,7 +216,7 @@ class ExtractKeywords(Stage):
                 buffer.clear()
 
         for c in word:
-            if c in ('.', ',', ';'):
+            if c in self.seps:
                 release_buffer()
             elif buffer or c != ' ':
                 buffer.append(c)
@@ -233,11 +225,16 @@ class ExtractKeywords(Stage):
 
         return seqs
 
-    def apply(self, file_paths, files_tables):
+    def apply(self, file_paths, files_tables=None):
         return list(self.apply_generator(file_paths, files_tables))
 
-    def apply_generator(self, file_paths, files_tables):
-        for file_path, tables in progressbar(zip(file_paths, files_tables)):
+    def apply_generator(self, file_paths, files_tables=None):
+        files_tables = files_tables or (None,)
+
+        for file_path, tables in progressbar(
+                zip_longest(file_paths, files_tables, fillvalue=None),
+                total=len(file_paths or files_tables)
+        ):
             if not tables:
                 json_tables = json.load(open(file_path, 'r', encoding='utf-8'))['tables']
                 tables = map(partial(pd.read_json, orient='split'), map(json.dumps, json_tables))
@@ -253,7 +250,11 @@ class ExtractKeywords(Stage):
                         kw = reduce(set.__or__, kw, set())
                         keywords[marker] = ','.join(kw)
 
-            yield keywords
+            if self.flatten_results:
+                for value in keywords.values():
+                    yield value.split(',')
+            else:
+                yield keywords
 
 
 class Pipeline:

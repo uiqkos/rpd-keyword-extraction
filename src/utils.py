@@ -1,10 +1,15 @@
 import os
 import re
+from functools import reduce, partial
 from operator import indexOf
 
 import pdf2docx
 from docx2pdf import convert
+from tqdm import tqdm
 from win32com import client as wc
+
+
+progressbar = partial(tqdm, ncols=100)
 
 
 def convert_doc_to_docx(filepath, remove=False):
@@ -62,3 +67,11 @@ def list_files(path):
 
 def identity(o):
     return o
+
+
+def compose2(f1, f2):
+    return lambda *args, **kwargs: f2(f1(*args, **kwargs))
+
+
+def compose(*fs):
+    return reduce(compose2, fs)

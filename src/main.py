@@ -1,10 +1,18 @@
 import warnings
+from functools import reduce, partial
+from operator import attrgetter
+from pprint import pprint
+
+import pandas as pd
+
+from src.PoSTagKeywordFilter import PoSTagKeywordFilter
+from src.extract_structure import files
+from src.morphy_utils import encode_masks
+from src.stages import Pipeline, ExtractKeywords
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-from src.extract_structure import files
 from src.settings import DATA_PATH
-from src.stages import *
-
 
 MARKERS = (
     'Планируемые результаты обучения',
@@ -26,11 +34,24 @@ if __name__ == '__main__':
     #
     # pipeline.apply(list(files()))
 
-    keywords = ExtractKeywords(MARKERS).apply((fs := list(files(DATA_PATH / 'tables'))), [None] * len(fs))
+    pipeline = Pipeline((
+        ExtractKeywords(MARKERS, flatten_results=True, seps=(';', '.')),
+        PoSTagKeywordFilter(masks=encode_masks(
+            # ('прил', 'сущ'),
+            ('сущ', 'сущ', 'сущ'),
+            ('сущ', 'сущ', 'прил', 'сущ'),
+            ('нар', 'глаг', 'сущ'),
+            # ('сущ', 'глаг'),
+            # ('мест', 'глаг'),
+        ), str_result=True)
+    ))
 
-    df = pd.DataFrame(keywords)
-    df['FILE_NAME'] = list(map(attrgetter('name'), fs))
-    df.set_index('FILE_NAME', drop=True, inplace=True)
-    df.to_csv(DATA_PATH / 'results' / 'tables.full.v4.1.csv')
+    keywords = pipeline.apply((fs := list(files(DATA_PATH / 'tables'))[:200]))
 
-    # ExtractTables(save_path=tables_path, generator=False, overwrite=False).apply_threading(list(files()))
+    df = pd.DataFrame.from_records(
+        data=zip(map(attrgetter('name'), fs), keywords),
+        columns=['filename', 'keywords']
+    )
+    # df['FILE_NAME'] = list(map(attrgetter('name'), fs))
+    df.set_index('filename', drop=True, inplace=True)
+    df.to_csv(DATA_PATH / 'results' / 'pos.small.v1.1.csv')
