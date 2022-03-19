@@ -1,30 +1,45 @@
 from functools import partial
 from more_itertools import flatten
 from operator import attrgetter
-from typing import List, Callable, Iterable
+from typing import List, Callable, Iterable, Union, Collection
 
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from nltk.metrics.distance import edit_distance, jaro_similarity
 
 from src.clustering.keyword import Keyword, KeywordGroup
-from src.utils import identity, compose
+from src.utils.utils import identity, compose
 
 
-class KeywordGroupMetric:
+class GroupMetric:
     def __init__(self,
-                 keyword_metric: Callable[[Keyword, Keyword], float],
+                 single_metric: Callable[[..., ...], float],
                  group_metric: Callable[[Iterable[float]], float]):
 
-        self.keyword_metric = keyword_metric
+        self.keyword_metric = single_metric
         self.group_metric = group_metric
 
-    def __call__(self, kwg1: KeywordGroup, kwg2: KeywordGroup):
+    def __call__(self, kwg1, kwg2):
         return self.group_metric(list(map(
             self.keyword_metric,
-            flatten([kw] * len(kwg2.keywords) for kw in kwg1.keywords),  # kw1, kw2, ..., kw1, kw2, ..., kw1, kw2, ...
-            flatten([kwg2.keywords] * len(kwg1.keywords))  # kw1, kw1, kw1, ..., kw2, kw2, kw2, ...
+            flatten([kw] * len(kwg2) for kw in kwg1),  # kw1, kw2, ..., kw1, kw2, ..., kw1, kw2, ...
+            flatten([kwg2] * len(kwg1))  # kw1, kw1, kw1, ..., kw2, kw2, kw2, ...
         )))
+
+
+class ComparatorFromDistanceMetric:
+    def __init__(self, metric, threshold, max=1.):
+        self.metric = metric
+        self.threshold = threshold
+        self.max = max
+
+    def __call__(self, *args, **kwargs):
+        return (self.max - self.metric(*args, **kwargs)) > self.threshold
+
+
+class KeywordGroupSingleMetric(GroupMetric):
+    def __call__(self, kwg1: KeywordGroup, kwg2: KeywordGroup):
+        return self.group_metric([self.keyword_metric(kwg1.keywords[0], kwg2.keywords[0])])
 
 
 def normal_form_equals(kw1: Keyword, kw2: Keyword):
@@ -74,8 +89,34 @@ class TfIdf:
     def __call__(self, kw1: Keyword, kw2: Keyword) -> float:
         v1 = self._vectorizer.fit_transform([
             ' '.join(word for word in kw1.stemmed)
-        ]).tocoo().data
+        ]).toarray()
         v2 = self._vectorizer.fit_transform([
             ' '.join(word for word in kw2.stemmed)
-        ]).tocoo().data
+        ]).toarray()
         return self.distance_metric(v1, v2)
+
+
+class BagOfWordsDistance:
+    def __init__(
+        self,
+        distance_metric: Callable,
+        preprocessor: Callable = None,
+        vectorizer_kwargs: dict = None
+    ):
+        preprocessor = preprocessor or identity
+        vectorizer_kwargs = vectorizer_kwargs or {}
+
+        self._vectorizer = CountVectorizer(
+            token_pattern=r'\w+',
+            preprocessor=preprocessor,
+            **vectorizer_kwargs
+        )
+
+        self.distance_metric = distance_metric
+
+    def __call__(self, kw1, kw2):
+        kw1, kw2 = self._vectorizer.fit_transform([kw1, kw2]).toarray()
+        # if not any(kw1) or not any(kw2):  # all zeroes
+        #     return 0.
+
+        return self.distance_metric(kw1, kw2)
