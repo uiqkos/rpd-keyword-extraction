@@ -7,7 +7,7 @@ import numpy as np
 from more_itertools import minmax
 from nltk import word_tokenize
 from sklearn.cluster import DBSCAN, OPTICS
-from tqdm import tqdm
+from src.utils import tqdm
 
 from src.stages.cluster import RuWikiRuscorporaCBOW_300_10_2021
 from src.stages.cluster.keywordgroup import KeywordGroup

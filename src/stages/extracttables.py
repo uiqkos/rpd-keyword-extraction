@@ -28,15 +28,15 @@ class ExtractTables(Stage):
     @staticmethod
     def _extract_tables(file_path) -> List[pd.DataFrame]:
         try:
-            tables = camelot.read_pdf(str(file_path), pages='all')
+            tables = camelot.read_pdf(str(file_path), pages='all', suppress_stdout=True)
 
-        finally:
+        except:
             pdf = Pdf.open(file_path, allow_overwriting_input=True)
             pdf.remove_unreferenced_resources()
             pdf.save()
             pdf.close()
 
-            tables = camelot.read_pdf(str(file_path), pages='all')
+            tables = camelot.read_pdf(str(file_path), pages='all', suppress_stdout=True)
 
         res = []
 
@@ -76,9 +76,20 @@ class ExtractTables(Stage):
         except Exception as e:
             if self.errors == 'ignore':
                 return
-            raise e
+
+            elif self.errors == 'print':
+                print(e)
+                print(file_path)
+                return
+
+            elif self.errors == 'raise':
+                raise e
+
+            else:
+                raise Exception(f'Wrong errors: {self.errors}')
 
         if self.save:
+            file_path = Path(file_path)
             new_file_path = self.save_path.joinpath(file_path.name + '.tables.json')
 
             if new_file_path.is_file() and not self.overwrite:

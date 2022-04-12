@@ -7,9 +7,9 @@ from typing import Iterator
 from typing import Union, Iterable
 
 import pandas as pd
-from tqdm import tqdm
+from tqdm import tqdm as tqdm_
 
-tqdm = partial(tqdm, ncols=100)
+tqdm = partial(tqdm_, ncols=100)
 
 
 def file_names(path):

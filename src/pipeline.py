@@ -18,7 +18,7 @@ class Pipeline:
 
         for stage in self.stages:
             try:
-                verbose = stage.verbose or self.verbose
+                verbose = self.verbose or stage.verbose
                 args = tqdm(args, desc=stage.__class__.__name__) if verbose else args
 
                 apply = tupled(stage.apply, input=True, output=stage != last(self.stages))
