@@ -1,24 +1,15 @@
 import json
-import logging
 import re
-import warnings
 from functools import reduce, partial
-from operator import attrgetter
-from pprint import pprint
+from typing import List
 
-import numpy as np
 import pandas as pd
-from more_itertools import flatten
-from tokenizers.normalizers import Replace
 
-from src.clustering.keyword import Keyword, normal_form, KeywordGroup, GroupReplacer
-from src.clustering.main import get_full
-from src.stages import *
-from src.stages.collect import Collect, Concat
+from src.stages.cluster.keywordgroup import normal_form, KeywordGroup, GroupReplacer
 
 from src.settings import DATA_PATH
 from src.utils.merge_csv import merge
-from src.utils.utils import file_paths, compose
+from src.utils import file_paths, compose
 
 MARKERS = (
     'Планируемые результаты обучения',
@@ -29,6 +20,20 @@ MARKERS = (
     # ГИА
     'Наименование оценочного средства',
 )
+
+
+def replace(keywords: List[List[str]], groups: List[KeywordGroup]):
+    replacers = list(map(GroupReplacer, groups))
+    return list(
+        map(
+            lambda kws: ','.join(set(reduce(
+                lambda kws_, replacer: replacer.replace(kws_),
+                replacers,
+                kws
+            ))),
+            keywords
+        )
+    )
 
 
 def group(threshold, limit, v='1.0', method='bag_of_words', ngram_range=(1, 1)):
@@ -181,9 +186,32 @@ def count_keywords(result_filepath):
 
 
 if __name__ == '__main__':
+
+
+    with open(DATA_PATH / 'results' / 'clusters' / 'clusters.v0.7.size_2344.DBSCAN.json', 'r', encoding='utf-8') as f:
+        groups = json.load(f)['clusters']
+
+    df = merge(file_paths(DATA_PATH / 'raw' / 'data_validation'), columns_take=3)
+
+    keywords = (
+        df
+            .keywords_processed
+            .astype(str)
+            .map(partial(re.sub, '\n', ''))
+            .map(lambda kws: list(filter(lambda l: len(l), kws.split(','))))
+    )
+
+    df['replaced'] = replace(keywords, list(map(KeywordGroup.from_keywords, groups)))
+    df.to_csv(DATA_PATH / 'results' / f'replaced.v0.2.size_{len(df.replaced)}.csv', index=False)
+
+    for index, (before, after) in df[['keywords_processed', 'replaced']].iterrows():
+        if len(before) != len(after):
+            print('Before:', ','.join(set(before.split(','))))
+            print('After:', ','.join(set(after.split(','))))
+
     # print(count_keywords(
     #     1000, DATA_PATH / 'results' / 'clusters' / 'clusters.v1.0.size_1000.bag_of_words.threshold_0.75.json'))
     # group(0.75, 1000, v='0.1', method='n-gram(2, 3)', ngram_range=(2, 3))
-    print(count_replacements(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv')) # 1160
-    print('Unique:', count_unique_keywords(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv'))
-    print('All:', count_keywords(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv'))
+    # print(count_replacements(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv')) # 1160
+    # print('Unique:', count_unique_keywords(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv'))
+    # print('All:', count_keywords(DATA_PATH / 'results' / f'replaced.n-gram(1, 2).size_1000.v0.1.csv'))

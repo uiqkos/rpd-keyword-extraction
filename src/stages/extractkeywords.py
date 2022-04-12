@@ -1,21 +1,60 @@
 import json
 import re
 from functools import partial, reduce
-from itertools import zip_longest, filterfalse
+from itertools import filterfalse
+from operator import indexOf
+from pathlib import Path
+from typing import Iterable, Union, Dict, List
 
 import pandas as pd
 
 from src.stages.stage import Stage
-from src.utils.utils import progressbar, index_of_marker
 
 
 class ExtractKeywords(Stage):
-    def __init__(self, markers, flatten_results=False, seps=('.', ',', ';'), *args, **kwargs):
+    def __init__(
+        self,
+        markers: Iterable[str],
+        flatten_results: bool = False,
+        seps: Iterable[str] = ('.', ',', ';'),
+        *args, **kwargs
+    ):
+        """
+        Стадия извлекает первичные ключевые слова (последовательности слов, не разделенные знаками препинания)
+
+        Parameters
+        ----------
+        markers: Iterable[str]
+            названия колонок в таблицах, из которых извлекать ключевые слова
+        flatten_results: bool
+            Распаковка результата: преобразование Dict[str, str] в List[str]
+        seps: Iterable[str]
+            Пунктуация, по которой разделяются слова
+        """
         super().__init__(*args, **kwargs)
 
         self.markers = markers
         self.flatten_results = flatten_results
         self.seps = seps
+
+    @staticmethod
+    def _process(s):
+        return ' '.join(re.findall(r'\w+', str(s).lower()))
+
+    @staticmethod
+    def _index_of_marker(container, marker) -> int:
+        marker = ExtractKeywords._process(marker)
+
+        def match(s):
+            return ExtractKeywords._process(s) == marker
+
+        try:
+            idx = indexOf(list(map(match, container)), True)
+
+        except ValueError:
+            idx = -1
+
+        return idx
 
     @staticmethod
     def _clean(word):
@@ -27,7 +66,7 @@ class ExtractKeywords(Stage):
         word = re.sub(r'-', '', word)
         word = re.sub(r'\w+:', '', word)
         word = re.sub(r' +', ' ', word)
-        word = re.sub(r'\.', '', word)
+        word = re.sub(r'', '', word)
         word = re.sub(r'\d+', ',', word)
         word = word.strip()
 
@@ -52,7 +91,25 @@ class ExtractKeywords(Stage):
 
         return seqs
 
-    def apply(self, file_path, tables=None):
+    def apply(
+        self,
+        file_path: Union[Path, str] = None,
+        tables: Iterable[pd.DataFrame] = None
+    ) -> Union[Dict[str, str], List[str]]:
+        """
+        Извлекает первичные ключевые слова из таблиц
+
+        Parameters
+        ----------
+        file_path: Path | str
+            путь до json файла с таблицами
+        tables: Iterable[pd.DataFrame]
+            Таблицы
+
+        Returns
+        -------
+            Словарь {колонка: ключевые слова} или список ключевых слов (flatten_results)
+        """
         if not tables:
             json_tables = json.load(open(file_path, 'r', encoding='utf-8'))['tables']
             tables = map(partial(pd.read_json, orient='split'), map(json.dumps, json_tables))
@@ -60,7 +117,7 @@ class ExtractKeywords(Stage):
         keywords = {}
         for table in tables:
             for marker in self.markers:
-                if (idx := index_of_marker(table.columns, marker)) != -1:
+                if (idx := self._index_of_marker(table.columns, marker)) != -1:
                     kw = set(table.iloc[:, idx])
                     kw = map(self._clean, kw)
                     kw = filterfalse(''.__eq__, kw)

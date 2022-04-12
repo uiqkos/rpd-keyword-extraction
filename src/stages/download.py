@@ -1,29 +1,38 @@
-import os
 import re
 import time
 from pathlib import Path
-from typing import Iterator, List
 from urllib import request
 
 from src.stages.stage import Stage
-from src.utils import progressbar
 
 
 class Download(Stage):
     def __init__(
-            self,
-            overwrite=False,
-            sleep: int = 1,
-            *args,
-            **kwargs
+        self,
+        save_path: Path,
+        overwrite: bool = False,
+        sleep: float = 1.,
+        *args, **kwargs
     ):
-        super().__init__(*args, **kwargs)
+        """
+        Стадия скачивает файлы в save_path
+
+        Parameters
+        ----------
+        save_path: Path | str
+            Путь до папки сохранения файлов
+        overwrite: bool
+            Перезаписать файл, если он существует
+        sleep: float
+            Задержка между запросами
+        """
+        super().__init__(save_path=save_path, *args, **kwargs)
 
         self.overwrite = overwrite
         self.sleep = sleep
 
-    def apply(self, file_id, file_name, link) -> Path:
-        file_name = re.sub(r'[^\w\-_\. ]', '', file_name)
+    def apply(self, file_id, file_name, link: str) -> Path:
+        file_name = re.sub(r'[^\w\-_\. ]', '', str(file_name))
         file_name = f"({file_id}) {file_name}"
         file_path = self.save_path.joinpath(file_name)
 
@@ -35,4 +44,3 @@ class Download(Stage):
         time.sleep(self.sleep)
 
         return file_path
-

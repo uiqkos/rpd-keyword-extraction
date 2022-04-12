@@ -1,25 +1,55 @@
-import warnings
+import os
 from pathlib import Path
-from typing import Iterator, List
+from typing import Union
+
+import docx2pdf
+from win32com import client as wc
 
 from src.stages.stage import Stage
-from src.utils import convert_docx_to_pdf, convert_doc_to_docx, progressbar
 
 
 class ConvertToPdf(Stage):
-    def __init__(self, overwrite=False, *args, **kwargs):
+    def __init__(self, overwrite: bool = False, *args, **kwargs):
+        """
+        Стадия конвертирует документы (.doc, .docx) в pdf
+
+        Parameters
+        ----------
+        overwrite: bool
+            Перезаписать файл, если он существует
+        """
         super().__init__(*args, **kwargs)
 
         self.overwrite = overwrite
 
-    def apply(self, file_path) -> Path:
-        if file_path.name.endswith('.doc'):
-            file_path = convert_doc_to_docx(file_path, self.overwrite)
+    @staticmethod
+    def _convert_doc_to_docx(filepath):
+        w = wc.Dispatch('Word.Application')
+        doc = w.Documents.Open(filepath)
+        new_filepath = filepath
+        new_filepath.name += 'x'
+        doc.SaveAs(new_filepath, 16)
 
-        if file_path.name.endswith('.docx'):
-            file_path = convert_docx_to_pdf(file_path, self.overwrite)
+        return new_filepath
+
+    @staticmethod
+    def _convert_docx_to_pdf(filepath):
+        new_filepath = filepath
+        new_filepath.name = new_filepath.replace('.docx', '.pdf')
+        docx2pdf.convert(filepath, new_filepath)
+
+        return new_filepath
+
+    def apply(self, file_path: Union[Path, str]) -> Path:
+        file_path = Path(file_path)
+
+        if file_path.name.lower().endswith('.doc'):
+            file_path = ConvertToPdf._convert_doc_to_docx(file_path)
+
+        if file_path.name.lower().endswith('.docx'):
+            file_path = ConvertToPdf._convert_docx_to_pdf(file_path)
 
         if file_path.name.lower().endswith('.pdf'):
             return file_path
 
-        raise Exception('Unable to parse file: ' + str(file_path))
+        raise Exception('Unable to convert file: ' + str(file_path))

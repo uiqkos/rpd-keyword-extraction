@@ -1,7 +1,7 @@
 import json
 from functools import partial
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import camelot
 import pandas as pd
@@ -11,20 +11,26 @@ from src.stages.stage import Stage
 
 
 class ExtractTables(Stage):
-    def __init__(self, save_path=None, fix_pdf=True, overwrite=True, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, overwrite: bool = True, *args, **kwargs):
+        """
+        Стадия извлекает таблицы из pdf документа.
 
-        self.fix_pdf = fix_pdf
-        self.save_path = save_path
-        self.save_path.mkdir(exist_ok=True)
-        self.save = bool(save_path)
+        Parameters
+        ----------
+        overwrite: bool
+            Перезаписать файл, если он существует
+        save_path: Path | str
+            Путь до папки сохранения. Таблицы сохраняются в файл {file_name}.tables.json
+        """
+        super().__init__(*args, **kwargs)
         self.overwrite = overwrite
 
-    def _extract_tables(self, file_path) -> List[pd.DataFrame]:
+    @staticmethod
+    def _extract_tables(file_path) -> List[pd.DataFrame]:
         try:
             tables = camelot.read_pdf(str(file_path), pages='all')
 
-        except Exception:
+        finally:
             pdf = Pdf.open(file_path, allow_overwriting_input=True)
             pdf.remove_unreferenced_resources()
             pdf.save()
@@ -43,7 +49,8 @@ class ExtractTables(Stage):
 
         return res
 
-    def _save_tables(self, file_path, tables, overwrite=True):
+    @staticmethod
+    def _save_tables(file_path, tables):
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'tables': list(map(partial(
@@ -51,27 +58,34 @@ class ExtractTables(Stage):
                 ), tables))
             }, f, ensure_ascii=False)
 
-    def _process_file_path(self, file_path):
-        new_file_path = None
+    def apply(self, file_path: str) -> Union[Tuple[Union[Path, None], List[pd.DataFrame]], None]:
+        """
+        Извлекает таблицы из документа
 
-        if self.save:
-            new_file_path = self.save_path.joinpath(file_path.name + '.tables.json')
-            if new_file_path.is_file() and not self.overwrite:
-                return
-
+        Parameters
+        ----------
+        file_path: str
+            Путь до документа
+        Returns
+        -------
+        Пару (путь, таблицы), где таблицы это список pd.DataFrame
+        """
         try:
-            tables = self._extract_tables(file_path)
+            tables = ExtractTables._extract_tables(file_path)
 
         except Exception as e:
             if self.errors == 'ignore':
                 return
             raise e
 
-        if new_file_path:
-            self._save_tables(new_file_path, tables)
+        if self.save:
+            new_file_path = self.save_path.joinpath(file_path.name + '.tables.json')
 
-        return new_file_path, tables
+            if new_file_path.is_file() and not self.overwrite:
+                return
 
-    def apply(self, file_path) -> Tuple[Path, List[pd.DataFrame]]:
-        if res := self._process_file_path(file_path):
-            return res
+            ExtractTables._save_tables(new_file_path, tables)
+
+            return new_file_path, tables
+
+        return None, tables
